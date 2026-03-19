@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>To Do List...</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+        body { font-family: 'Pretendard', sans-serif; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="bg-stone-50 h-screen overflow-hidden">
+
+    <!-- 메인 앱 컨테이너 -->
+    <div class="bg-white w-full h-full flex flex-col">
+        
+        <!-- 상단 헤더 영역 -->
+        <div class="bg-teal-700 p-6 text-white text-center">
+            <h1 class="text-2xl font-bold mb-2">오늘의 흐름</h1>
+            <p class="text-teal-100 text-sm text-balance">마음을 편안하게, 지금 이 순간 할 수 있는 것에 집중해 봅니다.</p>
+        </div>
+
+        <!-- 입력 영역 -->
+        <div class="p-4 bg-stone-50 border-b border-stone-200 flex gap-2">
+            <input type="text" id="taskInput" 
+                class="flex-1 bg-white border border-stone-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-teal-500 transition-shadow"
+                placeholder="새로운 할 일을 입력하세요...">
+            <button onclick="addTask()" 
+                class="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded-lg transition-colors duration-200">
+                <i class="fa-solid fa-plus"></i>
+            </button>
+        </div>
+
+        <!-- 할 일 목록 영역 -->
+        <div class="p-4 flex-1 overflow-y-auto no-scrollbar">
+            <ul id="taskList" class="space-y-3">
+                <!-- 자바스크립트를 통해 리스트가 추가됩니다 -->
+            </ul>
+        </div>
+        
+        <!-- 하단 상태 영역 -->
+        <div class="p-4 bg-stone-50 border-t border-stone-200 text-sm text-stone-500 flex flex-col gap-3">
+            <div class="flex justify-between items-center">
+                <span id="taskCount">남은 일: 0개</span>
+                <button onclick="clearCompleted()" class="text-rose-500 hover:text-rose-700 transition-colors">
+                    완료된 항목 지우기
+                </button>
+            </div>
+            <div class="flex justify-end gap-3 border-t border-stone-200 pt-3">
+                <!-- 일렉트론에서는 자동 저장이므로 수동 버튼이 필요 없습니다 -->
+                <span class="text-xs text-stone-400 self-center"><i class="fa-solid fa-check mr-1"></i>데이터가 PC에 자동 저장됩니다.</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 초기 데이터는 비워두고, 일렉트론에서 데이터를 받아오면 채웁니다.
+        let tasks = [
+            // 로딩 전 보여줄 기본 문구 (잠시 후 파일 내용으로 교체됨)
+            { id: 0, text: "데이터를 불러오는 중입니다...", completed: false, createdAt: "" }
+        ];
+
+        const taskInput = document.getElementById('taskInput');
+        const taskList = document.getElementById('taskList');
+        const taskCount = document.getElementById('taskCount');
+
+        // [일렉트론 연동] 데이터가 변경될 때마다 PC 파일로 저장 요청
+        function saveTasks() {
+            // window.electronAPI는 preload.js에서 정의해줍니다.
+            if (window.electronAPI) {
+                window.electronAPI.saveData(tasks);
+            }
+        }
+
+        // 엔터키 입력 처리
+        taskInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') addTask();
+        });
+
+        // 화면 그리기 함수
+        function renderTasks() {
+            taskList.innerHTML = '';
+            let activeCount = 0;
+
+            // 1. 할 일을 날짜별로 그룹화합니다.
+            const groupedTasks = tasks.reduce((acc, task) => {
+                if (!task.createdAt) {
+                    (acc['날짜 없음'] = acc['날짜 없음'] || []).push(task);
+                    return acc;
+                }
+                // "2026. 3. 17. 오후 6:30" 에서 "2026. 3. 17." 부분만 추출하여 키로 사용
+                const dateKey = task.createdAt.split('.').slice(0, 3).map(s => s.trim()).join('. ') + '.';
+                (acc[dateKey] = acc[dateKey] || []).push(task);
+                return acc;
+            }, {});
+
+            // 2. 날짜 키를 최신순으로 정렬합니다.
+            const sortedDates = Object.keys(groupedTasks).sort((a, b) => {
+                if (a === '날짜 없음') return 1;
+                if (b === '날짜 없음') return -1;
+                // '2026. 3. 17.' 형식의 문자열을 Date 객체로 변환하여 비교
+                const dateA = new Date(a.replace(/\.\s/g, '-').slice(0, -1));
+                const dateB = new Date(b.replace(/\.\s/g, '-').slice(0, -1));
+                return dateB - dateA; // 내림차순 정렬 (최신 날짜가 위로)
+            });
+
+            // 3. 정렬된 날짜 그룹별로 화면에 렌더링합니다.
+            sortedDates.forEach(dateKey => {
+                let taskNumber = 0; // 날짜별로 순번 초기화
+
+                // 날짜 헤더 생성
+                const dateHeader = document.createElement('div');
+                dateHeader.className = 'pt-5 pb-2'; // 날짜 그룹간의 간격
+
+                let displayDate = '';
+                const fullDate = dateKey;
+
+                if (dateKey !== '날짜 없음') {
+                    const groupDate = new Date(dateKey.replace(/\.\s/g, '-').slice(0, -1));
+                    
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    
+                    const yesterday = new Date();
+                    yesterday.setDate(today.getDate() - 1);
+                    yesterday.setHours(0, 0, 0, 0);
+
+                    if (groupDate.getTime() === today.getTime()) {
+                        displayDate = '오늘';
+                    } else if (groupDate.getTime() === yesterday.getTime()) {
+                        displayDate = '어제';
+                    }
+                }
+
+                dateHeader.innerHTML = `
+                    <div class="flex items-baseline border-b border-stone-200 pb-1">
+                        <span class="font-bold text-lg text-teal-800">${displayDate || fullDate}</span>
+                        ${displayDate ? `<span class="text-sm text-stone-500 ml-2">${fullDate}</span>` : ''}
+                    </div>
+                `;
+                taskList.appendChild(dateHeader);
+
+                // 해당 날짜의 할 일 목록 렌더링
+                const tasksForDate = groupedTasks[dateKey];
+                tasksForDate.forEach(task => {
+                    taskNumber++; // 각 할 일에 대해 순번 증가
+
+                    if (!task.completed) activeCount++;
+
+                    const li = document.createElement('li');
+                    li.className = `flex items-center justify-between p-3 rounded-lg border transition-all duration-200 ${
+                        task.completed ? 'bg-stone-100 border-stone-200' : 'bg-white border-stone-200 shadow-sm'
+                    }`;
+
+                    // 수정 모드일 때와 아닐 때 보여지는 화면을 다르게 합니다.
+                    if (task.isEditing) {
+                        li.innerHTML = `
+                            <div class="flex items-center gap-2 flex-1 w-full p-1">
+                                <span class="text-sm font-medium text-stone-400 w-8 text-center">${taskNumber}.</span>
+                                <input type="text" id="editInput-${task.id}" value="${task.text}" 
+                                    class="flex-1 bg-white border border-teal-300 rounded px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm text-stone-700"
+                                    onkeypress="if(event.key === 'Enter') saveEdit(${task.id})">
+                                <button onclick="saveEdit(${task.id})" class="text-teal-600 hover:text-teal-800 p-2 transition-colors" title="저장">
+                                    <i class="fa-solid fa-check"></i>
+                                </button>
+                                <button onclick="cancelEdit(${task.id})" class="text-stone-400 hover:text-rose-500 p-2 transition-colors" title="취소">
+                                    <i class="fa-solid fa-xmark"></i>
+                                </button>
+                            </div>
+                        `;
+                    } else {
+                        li.innerHTML = `
+                            <div class="flex items-center gap-2 flex-1 cursor-pointer" onclick="toggleTask(${task.id})">
+                                <span class="text-sm font-medium text-stone-400 w-8 text-center">${taskNumber}.</span>
+                                <button class="text-xl ${task.completed ? 'text-teal-500' : 'text-stone-300 hover:text-teal-400'} transition-colors">
+                                    <i class="fa-${task.completed ? 'solid fa-circle-check' : 'regular fa-circle'}"></i>
+                                </button>
+                                <div class="flex-1 flex flex-col">
+                                    <span class="${task.completed ? 'text-stone-400 line-through' : 'text-stone-700'} transition-all">
+                                        ${task.text}
+                                    </span>
+                                    <span class="text-[11px] ${task.completed ? 'text-stone-300' : 'text-stone-400'} mt-0.5">
+                                        ${task.createdAt || '이전 기록'}
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="flex gap-1">
+                                <button onclick="startEdit(${task.id})" class="text-stone-400 hover:text-teal-500 p-2 transition-colors" title="수정">
+                                    <i class="fa-solid fa-pen"></i>
+                                </button>
+                                <button onclick="deleteTask(${task.id})" class="text-stone-400 hover:text-rose-500 p-2 transition-colors" title="삭제">
+                                    <i class="fa-solid fa-trash-can"></i>
+                                </button>
+                            </div>
+                        `;
+                    }
+                    taskList.appendChild(li);
+                });
+            });
+
+            taskCount.textContent = `남은 일: ${activeCount}개`;
+            
+            // 화면을 새로 그릴 때마다 변경된 데이터를 저장합니다.
+            saveTasks();
+        }
+
+        // 추가 기능
+        function addTask() {
+            const text = taskInput.value.trim();
+            if (text === '') return;
+
+            // 현재 날짜와 시간 구하기 (예: 2026. 3. 17. 오후 6:30)
+            const now = new Date();
+            const dateOptions = { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' };
+            const createdAt = now.toLocaleDateString('ko-KR', dateOptions);
+
+            tasks.unshift({
+                id: Date.now(),
+                text: text,
+                completed: false,
+                createdAt: createdAt // 생성 시간 데이터 추가
+            });
+            taskInput.value = '';
+            renderTasks();
+        }
+
+        // 완료/미완료 토글 기능
+        function toggleTask(id) {
+            tasks = tasks.map(task => 
+                task.id === id ? { ...task, completed: !task.completed } : task
+            );
+            renderTasks();
+        }
+
+        // 수정 시작 기능 (연필 버튼 클릭 시)
+        function startEdit(id) {
+            tasks = tasks.map(task => 
+                task.id === id ? { ...task, isEditing: true } : task
+            );
+            renderTasks();
+            
+            // 입력창에 자동으로 포커스를 주고 커서를 맨 뒤로 이동시킵니다
+            setTimeout(() => {
+                const input = document.getElementById(`editInput-${id}`);
+                if(input) {
+                    input.focus();
+                    input.setSelectionRange(input.value.length, input.value.length);
+                }
+            }, 10);
+        }
+
+        // 수정 완료 기능 (체크 버튼 또는 엔터키 입력 시)
+        function saveEdit(id) {
+            const input = document.getElementById(`editInput-${id}`);
+            const newText = input.value.trim();
+            
+            if (newText === '') {
+                cancelEdit(id); // 빈 칸으로 저장하려 하면 수정을 취소합니다
+                return;
+            }
+            
+            tasks = tasks.map(task => 
+                task.id === id ? { ...task, text: newText, isEditing: false } : task
+            );
+            renderTasks();
+        }
+
+        // 수정 취소 기능 (엑스 버튼 클릭 시)
+        function cancelEdit(id) {
+            tasks = tasks.map(task => 
+                task.id === id ? { ...task, isEditing: false } : task
+            );
+            renderTasks();
+        }
+
+        // 삭제 기능
+        function deleteTask(id) {
+            tasks = tasks.filter(task => task.id !== id);
+            renderTasks();
+        }
+
+        // 완료된 항목 일괄 삭제 기능
+        function clearCompleted() {
+            tasks = tasks.filter(task => !task.completed);
+            renderTasks();
+        }
+
+        // 초기 화면 그리기
+        // renderTasks(); // 자동 실행하지 않고 데이터를 기다립니다.
+
+        // 앱이 시작되면 일렉트론에게 저장된 데이터를 달라고 요청합니다.
+        (async () => {
+            if (window.electronAPI) {
+                const loadedData = await window.electronAPI.loadData();
+                if (loadedData) {
+                    tasks = loadedData;
+                } else {
+                    // 저장된 파일이 없으면 초기값 설정
+                    tasks = [
+                        { id: 1, text: "아침 기상 후 따뜻한 물 한 잔 마시기 (위장 달래기)", completed: false, createdAt: new Date().toLocaleDateString('ko-KR') },
+                        { id: 2, text: "오늘 할 일을 여기에 적어보세요", completed: false, createdAt: new Date().toLocaleDateString('ko-KR') }
+                    ];
+                }
+                renderTasks();
+            } else {
+                console.log("일렉트론 환경이 아닙니다.");
+                renderTasks();
+            }
+        })();
+    </script>
+</body>
+</html>
