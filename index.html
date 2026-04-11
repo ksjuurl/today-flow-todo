@@ -4,6 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>To Do List...</title>
+    <!-- Electron 보안 및 외부 리소스 허용을 위한 CSP 설정 -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://www.gstatic.com https://cdn.tailwindcss.com https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; font-src 'self' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; img-src 'self' data: https://cdn-icons-png.flaticon.com; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.google-analytics.com;">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#2F2A22">
+    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/906/906334.png">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
@@ -116,6 +121,13 @@
         const analytics = getAnalytics(app);
         window.db = getFirestore(app);
         
+        // 외부 스크립트에서 접근할 수 있도록 Firebase 함수들을 window에 할당
+        window.firebaseDoc = doc;
+        window.firebaseSetDoc = setDoc;
+        window.firebaseOnSnapshot = onSnapshot;
+
+        console.log("Firebase initialized");
+        
         // 동기화 리스너 실행
         if (typeof initFirebaseSync === 'function') {
             initFirebaseSync();
@@ -124,6 +136,9 @@
 
     <script>
         // 초기 데이터는 비워두고, 일렉트론에서 데이터를 받아오면 채웁니다.
+        window.isSyncing = false; // 동기화 플래그 초기화
+        window.lastCloudTimestamp = 0; // 클라우드 데이터 시간 기록
+
         let tasks = [
             // 로딩 전 보여줄 기본 문구 (잠시 후 파일 내용으로 교체됨)
             { id: 0, text: "데이터를 불러오는 중입니다...", completed: false, createdAt: "" }
@@ -155,6 +170,8 @@
 
         // [일렉트론 연동] 데이터가 변경될 때마다 PC 파일로 저장 요청
         async function saveTasks() {
+            if (window.isSyncing) return; // Firebase에서 동기화 중일 때는 저장을 건너뜁니다.
+
             const title = document.getElementById('headerTitle').innerText.trim();
             const subtitle = document.getElementById('headerSubtitle').innerText.trim();
             const dataToSave = {
@@ -169,11 +186,11 @@
                 window.electronAPI.saveData(dataToSave);
             }
 
-            // 2. Firebase 클라우드 저장 (동기화)
-            if (window.db) {
+            // 2. Firebase 클라우드 저장
+            if (window.db && window.firebaseSetDoc) {
                 try {
-                    // 'user_default'는 예시이며, 나중에 로그인 기능을 넣으면 사용자별 ID로 바꿀 수 있습니다.
-                    await setDoc(doc(window.db, "todo_data", "user_default"), dataToSave);
+                    await window.firebaseSetDoc(window.firebaseDoc(window.db, "todo_data", "user_default"), dataToSave);
+                    console.log("Cloud Save Success");
                 } catch (e) {
                     console.error("Firebase 저장 실패:", e);
                 }
@@ -182,9 +199,8 @@
         // saveTasks가 전역 범위에 있어야 contenteditable의 onblur에서 호출 가능합니다.
         window.saveTasks = saveTasks;
 
-        // 엔터키 입력 처리
-        // [추가] 서비스 워커 등록 (PWA 활성화)
-        if ('serviceWorker' in navigator) {
+        // [추가] 서비스 워커 등록 (PWA 활성화) - file:// 프로토콜이 아닐 때만 실행
+        if ('serviceWorker' in navigator && location.protocol !== 'file:') {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('sw.js')
                     .then(reg => console.log('서비스 워커 등록 성공:', reg.scope))
@@ -192,6 +208,7 @@
             });
         }
 
+        // 엔터키 입력 처리
         taskInput.addEventListener('keypress', function(e) {
             if (e.key === 'Enter') addTask();
         });
@@ -384,6 +401,7 @@
             });
             taskInput.value = '';
             renderTasks();
+            saveTasks(); // 상태 변경 후 저장 호출
         }
 
         // [추가] 퀵 날짜 선택 기능
@@ -415,6 +433,7 @@
                 return task;
             });
             renderTasks();
+            saveTasks(); // 상태 변경 후 저장 호출
         }
 
         // 수정 시작 기능 (연필 버튼 클릭 시)
@@ -450,6 +469,7 @@
                 task.id === id ? { ...task, text: newText, targetDate: newDate, isEditing: false } : task
             );
             renderTasks();
+            saveTasks(); // 상태 변경 후 저장 호출
         }
 
         // 수정 취소 기능 (엑스 버튼 클릭 시)
@@ -464,12 +484,14 @@
         function deleteTask(id) {
             tasks = tasks.filter(task => task.id !== id);
             renderTasks();
+            saveTasks(); // 상태 변경 후 저장 호출
         }
 
         // 완료된 항목 일괄 삭제 기능
         function clearCompleted() {
             tasks = tasks.filter(task => task.status !== 'done');
             renderTasks();
+            saveTasks(); // 상태 변경 후 저장 호출
         }
 
         // [변경] 메모 모달 열기
@@ -508,6 +530,7 @@
             tasks = tasks.map(task => task.id === currentMemoTaskId ? { ...task, memo: val } : task);
             saveTasks();
             renderTasks();
+            saveTasks();
             closeMemoModal();
         }
 
@@ -542,21 +565,55 @@
 
         // [추가] Firebase 실시간 동기화 리스너
         function initFirebaseSync() {
-            if (!window.db) return;
+            if (!window.db || !window.firebaseOnSnapshot) return;
             
-            // 데이터가 변경될 때마다 자동으로 화면 갱신
-            onSnapshot(doc(window.db, "todo_data", "user_default"), (doc) => {
-                if (doc.exists()) {
-                    const data = doc.data();
+            console.log("Starting Firebase Sync Listener...");
+            window.firebaseOnSnapshot(window.firebaseDoc(window.db, "todo_data", "user_default"), (snap) => {
+                if (!snap.exists()) {
+                    console.log("No cloud data found.");
+                    // 클라우드에 데이터가 없으면 현재 로컬 데이터를 업로드합니다.
+                    saveTasks();
+                    return;
+                }
+
+                const data = snap.data();
+                const cloudTimestamp = data.lastUpdated || 0;
+
+                // 클라우드 데이터가 로컬보다 최신이고, 현재 내가 저장 중이 아닐 때만 업데이트
+                if (cloudTimestamp > window.lastCloudTimestamp && !window.isSyncing) {
+                    console.log("Cloud data is newer. Syncing...");
+                    window.isSyncing = true;
+                    
+                    window.lastCloudTimestamp = cloudTimestamp;
                     tasks = data.tasks || [];
-                    document.getElementById('headerTitle').innerText = data.title || "순하게 호흡";
-                    document.getElementById('headerSubtitle').innerText = data.subtitle || "작은것 부터 천천히.";
+                    
+                    if (data.title) document.getElementById('headerTitle').innerText = data.title;
+                    if (data.subtitle) document.getElementById('headerSubtitle').innerText = data.subtitle;
+                    
+                    if (window.electronAPI) {
+                        window.electronAPI.saveData(data);
+                    }
+                    
                     renderTasks();
+                    window.isSyncing = false; // 플래그 해제
+                } else if (cloudTimestamp < window.lastCloudTimestamp) {
+                    // 로컬 데이터가 클라우드보다 최신인 경우 (PC에서 오프라인 작업 후 온라인 접속 시)
+                    console.log("Local data is newer. Pushing to cloud...");
+                    saveTasks();
                 }
             });
         }
 
         // 초기 화면 그리기
+        // [추가] 서비스 워커 등록 (PWA 활성화)
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js')
+                    .then(reg => console.log('서비스 워커 등록 성공:', reg.scope))
+                    .catch(err => console.log('서비스 워커 등록 실패:', err));
+            });
+        }
+
         // 앱이 시작되면 일렉트론에게 저장된 데이터를 달라고 요청합니다.
         (async () => {
             if (window.electronAPI) {
@@ -564,6 +621,8 @@
                 if (loadedData && typeof loadedData === 'object' && !Array.isArray(loadedData)) {
                     // 새로운 객체 형식인 경우 (제목, 부제목 포함)
                     tasks = loadedData.tasks || [];
+                    // 로컬 파일의 마지막 수정 시간을 동기화 기준점에 기록합니다.
+                    window.lastCloudTimestamp = loadedData.lastUpdated || 0;
                     document.getElementById('headerTitle').innerText = loadedData.title || "순하게 호흡";
                     document.getElementById('headerSubtitle').innerText = loadedData.subtitle || "작은것 부터 천천히. 큰것은 작은것 부터 시작된다.";
                 } else if (Array.isArray(loadedData)) {
