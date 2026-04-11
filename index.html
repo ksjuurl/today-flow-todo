@@ -184,6 +184,9 @@
             // 1. 일렉트론 로컬 저장
             if (window.electronAPI) {
                 window.electronAPI.saveData(dataToSave);
+            } else {
+                // 스마트폰(PWA) 브라우저 로컬 저장
+                localStorage.setItem('dayd_backup', JSON.stringify(dataToSave));
             }
 
             // 2. Firebase 클라우드 저장
@@ -590,6 +593,8 @@
                     
                     if (window.electronAPI) {
                         window.electronAPI.saveData(data);
+                    } else {
+                        localStorage.setItem('dayd_backup', JSON.stringify(data));
                     }
                     
                     renderTasks();
@@ -599,11 +604,11 @@
         }
 
         // 초기 화면 그리기
-        // [추가] 서비스 워커 등록 (PWA 활성화)
-        if ('serviceWorker' in navigator) {
+        // [추가] 서비스 워커 등록 (PWA 활성화) - 웹 환경(http/https)에서만 실행
+        if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('sw.js')
-                    .then(reg => console.log('서비스 워커 등록 성공:', reg.scope))
+                    .then(reg => console.log('PWA 서비스 워커 활성화 완료:', reg.scope))
                     .catch(err => console.log('서비스 워커 등록 실패:', err));
             });
         }
@@ -632,6 +637,13 @@
                 renderTasks();
             } else {
                 console.log("일렉트론 환경이 아닙니다.");
+                // 브라우저 로컬 데이터 먼저 확인
+                const localData = localStorage.getItem('dayd_backup');
+                if (localData) {
+                    const parsed = JSON.parse(localData);
+                    tasks = parsed.tasks || [];
+                    window.lastCloudTimestamp = parsed.lastUpdated || 0;
+                }
                 renderTasks();
             }
         })();

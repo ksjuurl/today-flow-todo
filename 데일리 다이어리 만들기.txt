@@ -12,3 +12,14 @@ npm install
 npm run 폴더이름
 npm run dist
 
+
+
+
+
+----------------
+PWA 스마트폰 버전 적용
+
+git add .
+git commit -m "메시지"
+git push
+
