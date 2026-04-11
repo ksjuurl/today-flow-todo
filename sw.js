@@ -1,4 +1,4 @@
-const CACHE_NAME = 'dayd-v3'; // 버전을 올려서 갱신 유도
+const CACHE_NAME = 'dayd-v4'; // 버전을 올려서 갱신 유도
 const ASSETS = [
   './',
   './index.html',

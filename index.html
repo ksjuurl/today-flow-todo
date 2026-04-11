@@ -195,7 +195,7 @@
                     const docRef = window.firebaseDoc(window.db, "todo_data", "user_default");
                     await window.firebaseSetDoc(docRef, dataToSave);
                     window.lastCloudTimestamp = dataToSave.lastUpdated; // 내 저장 시간 업데이트
-                    console.log("Cloud Save Success:", new Date(window.lastCloudTimestamp).toLocaleTimeString());
+                    console.log("Cloud Save Success:", window.lastCloudTimestamp);
                 } catch (e) {
                     console.error("Firebase 저장 실패:", e);
                 }
@@ -570,8 +570,6 @@
             
             console.log("Starting Firebase Sync Listener...");
             window.firebaseOnSnapshot(window.firebaseDoc(window.db, "todo_data", "user_default"), (snap) => {
-                if (window.isSyncing) return;
-
                 if (!snap.exists()) {
                     console.log("No cloud data found.");
                     return;
@@ -580,16 +578,21 @@
                 const data = snap.data();
                 const cloudTimestamp = data.lastUpdated || 0;
 
-                // 클라우드 데이터가 로컬보다 최신이고, 현재 내가 저장 중이 아닐 때만 업데이트
-                if (cloudTimestamp > window.lastCloudTimestamp) {
-                    console.log("Cloud data is newer. Syncing...");
+                // 1. 내가 방금 저장한 데이터가 아니고 (isSyncing)
+                // 2. 클라우드의 타임스탬프가 로컬과 다를 때만 업데이트
+                if (cloudTimestamp !== window.lastCloudTimestamp && !window.isSyncing) {
+                    console.log("New data detected from cloud. Syncing...");
                     window.isSyncing = true;
                     
                     window.lastCloudTimestamp = cloudTimestamp;
                     tasks = data.tasks || [];
                     
-                    if (data.title) document.getElementById('headerTitle').innerText = data.title;
-                    if (data.subtitle) document.getElementById('headerSubtitle').innerText = data.subtitle;
+                    if (data.title !== undefined) {
+                        document.getElementById('headerTitle').innerText = data.title;
+                    }
+                    if (data.subtitle !== undefined) {
+                        document.getElementById('headerSubtitle').innerText = data.subtitle;
+                    }
                     
                     if (window.electronAPI) {
                         window.electronAPI.saveData(data);
