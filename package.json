@@ -1,16 +1,23 @@
 {
-  "name": "dayd",
+  "name": "today-flow-todo",
   "version": "1.0.0",
+  "description": "오늘의 흐름 - To Do List",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dist": "electron-builder"
   },
-  "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "",
   "devDependencies": {
-    "electron": "latest"
+    "electron": "^29.0.0",
+    "electron-builder": "^24.13.0"
+  },
+  "build": {
+    "appId": "com.todayflow.todo",
+    "win": {
+      "target": "nsis"
+    },
+    "files": ["**/*"]
   }
 }
