@@ -189,8 +189,10 @@
             // 2. Firebase 클라우드 저장
             if (window.db && window.firebaseSetDoc) {
                 try {
-                    await window.firebaseSetDoc(window.firebaseDoc(window.db, "todo_data", "user_default"), dataToSave);
-                    console.log("Cloud Save Success");
+                    const docRef = window.firebaseDoc(window.db, "todo_data", "user_default");
+                    await window.firebaseSetDoc(docRef, dataToSave);
+                    window.lastCloudTimestamp = dataToSave.lastUpdated; // 내 저장 시간 업데이트
+                    console.log("Cloud Save Success:", new Date(window.lastCloudTimestamp).toLocaleTimeString());
                 } catch (e) {
                     console.error("Firebase 저장 실패:", e);
                 }
@@ -373,9 +375,6 @@
             });
 
             taskCount.textContent = `남은 일: ${activeCount}개`;
-            
-            // 화면을 새로 그릴 때마다 변경된 데이터를 저장합니다.
-            saveTasks();
         }
 
         // 추가 기능
@@ -528,9 +527,8 @@
             const val = document.getElementById('modalMemoInput').value;
             
             tasks = tasks.map(task => task.id === currentMemoTaskId ? { ...task, memo: val } : task);
-            saveTasks();
             renderTasks();
-            saveTasks();
+            saveTasks(); // 한 번만 호출
             closeMemoModal();
         }
 
@@ -569,10 +567,10 @@
             
             console.log("Starting Firebase Sync Listener...");
             window.firebaseOnSnapshot(window.firebaseDoc(window.db, "todo_data", "user_default"), (snap) => {
+                if (window.isSyncing) return;
+
                 if (!snap.exists()) {
                     console.log("No cloud data found.");
-                    // 클라우드에 데이터가 없으면 현재 로컬 데이터를 업로드합니다.
-                    saveTasks();
                     return;
                 }
 
@@ -580,7 +578,7 @@
                 const cloudTimestamp = data.lastUpdated || 0;
 
                 // 클라우드 데이터가 로컬보다 최신이고, 현재 내가 저장 중이 아닐 때만 업데이트
-                if (cloudTimestamp > window.lastCloudTimestamp && !window.isSyncing) {
+                if (cloudTimestamp > window.lastCloudTimestamp) {
                     console.log("Cloud data is newer. Syncing...");
                     window.isSyncing = true;
                     
@@ -596,10 +594,6 @@
                     
                     renderTasks();
                     window.isSyncing = false; // 플래그 해제
-                } else if (cloudTimestamp < window.lastCloudTimestamp) {
-                    // 로컬 데이터가 클라우드보다 최신인 경우 (PC에서 오프라인 작업 후 온라인 접속 시)
-                    console.log("Local data is newer. Pushing to cloud...");
-                    saveTasks();
                 }
             });
         }
