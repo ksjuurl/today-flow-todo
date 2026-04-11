@@ -172,11 +172,12 @@
         async function saveTasks() {
             if (window.isSyncing) return; // Firebase에서 동기화 중일 때는 저장을 건너뜁니다.
 
-            const title = document.getElementById('headerTitle').innerText.trim();
-            const subtitle = document.getElementById('headerSubtitle').innerText.trim();
+            const titleEl = document.getElementById('headerTitle');
+            const subtitleEl = document.getElementById('headerSubtitle');
+            
             const dataToSave = {
-                title: title,
-                subtitle: subtitle,
+                title: titleEl ? titleEl.innerText.trim() : "순하게 호흡",
+                subtitle: subtitleEl ? subtitleEl.innerText.trim() : "작은것 부터 천천히.",
                 tasks: tasks,
                 lastUpdated: Date.now()
             };
