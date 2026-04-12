@@ -149,7 +149,14 @@
                 tasksForDate.forEach(task => {
                     taskNumber++; // 각 할 일에 대해 순번 증가
 
-                    if (!task.completed) activeCount++;
+                    // 상태가 없으면 기본값 설정 (하위 호환성)
+                    if (!task.status) {
+                        task.status = task.completed ? 'done' : 'todo';
+                    }
+
+                    // 오직 'todo'(아직 체크하지 않은 일) 상태만 카운트합니다.
+                    // 'half'(반쯤 함), 'failed'(못함), 'done'(완료)은 제외됩니다.
+                    if (task.status === 'todo') activeCount++;
 
                     const li = document.createElement('li');
                     li.className = `flex items-center justify-between p-3 rounded-lg border transition-all duration-200 ${
@@ -173,14 +180,24 @@
                             </div>
                         `;
                     } else {
+                        // 상태에 따른 아이콘 정의
+                        const statusIcons = {
+                            'todo': 'fa-regular fa-circle text-stone-300',
+                            'done': 'fa-solid fa-circle-check text-teal-500',
+                            'half': 'fa-brands fa-envira text-yellow-500',
+                            'failed': 'fa-solid fa-circle-xmark text-rose-400'
+                        };
+                        const currentIcon = statusIcons[task.status] || statusIcons['todo'];
+                        const isDimmed = task.status !== 'todo';
+
                         li.innerHTML = `
                             <div class="flex items-center gap-2 flex-1 cursor-pointer" onclick="toggleTask(${task.id})">
                                 <span class="text-sm font-medium text-stone-400 w-8 text-center">${taskNumber}.</span>
-                                <button class="text-xl ${task.completed ? 'text-teal-500' : 'text-stone-300 hover:text-teal-400'} transition-colors">
-                                    <i class="fa-${task.completed ? 'solid fa-circle-check' : 'regular fa-circle'}"></i>
+                                <button class="text-xl transition-colors">
+                                    <i class="${currentIcon}"></i>
                                 </button>
                                 <div class="flex-1 flex flex-col">
-                                    <span class="${task.completed ? 'text-stone-400 line-through' : 'text-stone-700'} transition-all">
+                                    <span class="${isDimmed ? 'text-stone-400 line-through' : 'text-stone-700'} transition-all">
                                         ${task.text}
                                     </span>
                                     <span class="text-[11px] ${task.completed ? 'text-stone-300' : 'text-stone-400'} mt-0.5">
@@ -221,6 +238,7 @@
             tasks.unshift({
                 id: Date.now(),
                 text: text,
+                status: 'todo',
                 completed: false,
                 createdAt: createdAt // 생성 시간 데이터 추가
             });
@@ -228,11 +246,19 @@
             renderTasks();
         }
 
-        // 완료/미완료 토글 기능
+        // 상태 순환 토글 (할 일 -> 완료 -> 반쯤 함 -> 못함 -> 할 일)
         function toggleTask(id) {
-            tasks = tasks.map(task => 
-                task.id === id ? { ...task, completed: !task.completed } : task
-            );
+            const statusOrder = ['todo', 'done', 'half', 'failed'];
+            tasks = tasks.map(task => {
+                if (task.id === id) {
+                    const currentStatus = task.status || (task.completed ? 'done' : 'todo');
+                    const currentIndex = statusOrder.indexOf(currentStatus);
+                    const nextIndex = (currentIndex + 1) % statusOrder.length;
+                    const nextStatus = statusOrder[nextIndex];
+                    return { ...task, status: nextStatus, completed: nextStatus === 'done' };
+                }
+                return task;
+            });
             renderTasks();
         }
 
