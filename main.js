@@ -2,6 +2,9 @@ const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
+// 앱 이름 고정 (개발 모드와 설치 버전의 데이터 폴더를 동일하게 맞춤)
+app.name = 'today-flow-todo';
+
 // [중요] 앱 설치/삭제와 관계없이 데이터를 안전하게 보관하기 위한 경로 설정
 // C:\Users\사용자명\AppData\Roaming\today-flow-todo\data.json 와 같은 경로에 저장됩니다.
 const userDataPath = app.getPath('userData');
@@ -42,12 +45,11 @@ function createWindow() {
         autoHideMenuBar: true // 상단 메뉴바 숨김
     });
 
-    // [수정] 설치 버전에서도 Ctrl+Shift+I로 개발자 도구를 열 수 있게 함 (디버깅용)
-    // 나중에 완전히 완성되면 이 부분을 지우거나 주석 처리하세요.
-    win.webContents.on('did-fail-load', () => win.loadFile(path.join(__dirname, 'index.html')));
-    
     // HTML 파일 로드 (파일명이 index.html로 변경되었다고 가정)
     win.loadFile(path.join(__dirname, 'index.html'));
+
+    // 로드 실패 시 재시도 로직 (경로 문제 방지)
+    win.webContents.on('did-fail-load', () => win.loadFile(path.join(__dirname, 'index.html')));
     
     // win.webContents.openDevTools(); // 필요한 경우 주석을 해제하면 실행 시 바로 도구가 뜹니다.
 }
@@ -57,7 +59,7 @@ app.on('window-all-closed', () => {
 });
 
 // [IPC 통신] 데이터 저장 요청 처리
-ipcMain.on('save-data', async (event, data) => {
+ipcMain.handle('save-data', async (event, data) => {
     try {
         // 폴더가 없으면 생성해주는 로직 추가
         if (!fs.existsSync(userDataPath)) {
@@ -65,8 +67,10 @@ ipcMain.on('save-data', async (event, data) => {
         }
         // data.json 파일에 예쁘게 포맷팅하여 저장
         await fs.promises.writeFile(dataFile, JSON.stringify(data, null, 2), 'utf-8');
+        return { success: true };
     } catch (error) {
         console.error('저장 실패:', error);
+        return { success: false, error: error.message };
     }
 });
 

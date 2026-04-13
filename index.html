@@ -391,7 +391,7 @@
                                         ${task.text}
                                     </span>
                                     <span class="text-[11px] ${task.status === 'done' || task.status === 'failed' ? 'text-stone-300' : 'text-stone-400'} mt-0.5">
-                                        ${task.createdAt || '이전 기록'}
+                                        ${task.targetDate ? task.targetDate.replace(/-/g, '. ') : (task.createdAt || '이전 기록')}
                                     </span>
                                 </div>
                             </div>
